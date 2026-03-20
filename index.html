@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Cờ vua Mỡ & Mè vs AI</title>
+
+  <!-- Local vendor (served via http://localhost:8000/) -->
+  <link rel="stylesheet" href="./vendor2/chessboard.min.css">
+
+  <style>
+    :root { --bg:#0b1220; --card:#111a2b; --text:#eaf0ff; --muted:#a9b4c3; }
+    body { margin:0; font-family:system-ui,Segoe UI,Roboto,Arial; background:linear-gradient(180deg,#070b14,#0b1220); color:var(--text); }
+    body { -webkit-text-size-adjust: 100%; }
+    .wrap {
+      max-width:1100px;
+      margin:0 auto;
+      padding:18px;
+      padding-left: calc(18px + env(safe-area-inset-left));
+      padding-right: calc(18px + env(safe-area-inset-right));
+      padding-top: calc(18px + env(safe-area-inset-top));
+      padding-bottom: calc(18px + env(safe-area-inset-bottom));
+      display:grid;
+      gap:16px;
+      grid-template-columns: 1fr 360px;
+    }
+    @media (max-width: 980px){ .wrap { grid-template-columns: 1fr; } }
+    @media (max-width: 520px){ .wrap { padding:12px; gap:12px; } }
+    .card { background:rgba(17,26,43,.92); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:14px; }
+    @media (max-width: 520px){ .card { padding:12px; border-radius:14px; } }
+    h1 { font-size:20px; margin:0 0 8px; }
+    .muted { color:var(--muted); font-size:13px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .row > button { flex: 1 1 160px; }
+    @media (max-width: 520px){ .row { gap:8px; } .row > button { flex-basis: 46%; } }
+    label { font-size:13px; color:var(--muted); display:block; margin:8px 0 6px; }
+    select, input[type="range"], input[type="number"] {
+      width:100%; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,.10);
+      background:#0c1220; color:var(--text);
+    }
+    button {
+      border:0; border-radius:999px; padding:10px 14px; font-weight:800; cursor:pointer;
+      background:linear-gradient(135deg,#1f4aa8,#2f7bdc); color:white;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button.secondary { background:#0c1220; border:1px solid rgba(255,255,255,.12); }
+    @media (max-width: 520px){ button { padding:12px 16px; font-size:16px; } }
+    .status { font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; color:#d7e7ff; white-space:pre-wrap; }
+
+    .counter { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .pill { background:#0c1220; border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:10px 12px; }
+    .big { font-size:22px; font-weight:900; margin-top:2px; }
+
+    #board { width: min(96vw, 560px); margin: 10px auto; max-width:100%; }
+    /* Mobile/tablet: prevent page scroll while dragging pieces */
+    #board, #board * { touch-action: none; }
+
+    /* Tap-to-move highlights */
+    .sq-hl { box-shadow: inset 0 0 0 4px rgba(56,189,248,.55); }
+    .sq-hint { box-shadow: inset 0 0 0 4px rgba(34,197,94,.50); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Cờ vua Mỡ & Mè vs AI</h1>
+      <div class="muted">Kéo thả quân để đi. AI sẽ trả lời. Có âm thanh. Thử thách: thắng 10 ván.</div>
+
+      <div id="board"></div>
+
+      <div class="row" style="justify-content:center;">
+        <button id="newGameBtn">Ván mới</button>
+        <button id="flipBtn" class="secondary">Đổi bên (Flip)</button>
+        <button id="undoBtn" class="secondary">Đi lại (Undo)</button>
+        <button id="soundBtn" class="secondary">Âm thanh: BẬT</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h1>Cài đặt & Thử thách</h1>
+
+      <div class="counter">
+        <div class="pill">
+          <div class="muted">Số ván thắng của Mỡ & Mè</div>
+          <div class="big"><span id="wins">0</span> / 10</div>
+        </div>
+        <div class="pill">
+          <div class="muted">Mục tiêu</div>
+          <div class="big">Vườn thú Thủ Lệ</div>
+        </div>
+      </div>
+
+      <label>Hai anh chơi bên</label>
+      <select id="humanColor">
+        <option value="w" selected>Trắng (White)</option>
+        <option value="b">Đen (Black)</option>
+      </select>
+
+      <label>Độ mạnh (Skill 0–20)</label>
+      <input id="skill" type="range" min="0" max="20" value="16"/>
+      <div class="muted">Hiện tại: <span id="skillVal">16</span> / 20</div>
+
+      <label>Thời gian AI suy nghĩ mỗi nước (ms)</label>
+      <input id="thinkTime" type="number" min="50" max="5000" step="50" value="600"/>
+
+      <label>Trạng thái</label>
+      <div id="status" class="status">Đang tải AI…</div>
+
+      <div class="muted" style="margin-top:10px;">
+        Gợi ý:
+        <ul>
+          <li>AI giỏi: Skill 18–20, think time 900–1500ms.</li>
+          <li>Bé mới học: Skill 8–12.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- IMPORTANT: Stockfish WASM loader needs locateFile BEFORE stockfish.js runs -->
+  <script>
+    // Tell Stockfish where to find stockfish.wasm (served locally).
+    // Must exist as a global before loading ./vendor2/stockfish.js
+    window.Module = window.Module || {};
+    window.Module.locateFile = (p) => './vendor2/' + p;
+  </script>
+
+  <!-- Local vendor scripts -->
+  <script src="./vendor2/jquery.min.js"></script>
+  <script src="./vendor2/chessboard.min.js"></script>
+  <script src="./vendor2/stockfish.js"></script>
+  <script>
+    // stockfish.js (this build) exports via the script tag: document.currentScript._exports
+    // Normalize it to window.Stockfish for our game code.
+    (function(){
+      try {
+        if (!window.Stockfish) {
+          const s = document.querySelector('script[src="./vendor2/stockfish.js"]');
+          if (s && s._exports) window.Stockfish = s._exports;
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <script type="module">
+    import { Chess } from './vendor2/chess.min.js';
+
+    // ===== Sound (beeps, no copyrighted audio files) =====
+    let audioCtx = null;
+    let soundOn = true;
+
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function beep(freq=440, dur=0.08, type='sine', vol=0.06) {
+      if (!soundOn) return;
+      ensureAudio();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + dur);
+    }
+
+    const SFX = {
+      start(){ beep(523,0.08,'sine',0.06); setTimeout(()=>beep(659,0.08,'sine',0.06),90); },
+      move(){ beep(520,0.05,'triangle',0.05); },
+      capture(){ beep(220,0.06,'square',0.05); setTimeout(()=>beep(180,0.06,'square',0.05),70); },
+      check(){ beep(880,0.06,'sine',0.05); setTimeout(()=>beep(990,0.06,'sine',0.05),80); },
+      win(){ beep(659,0.08,'sine',0.06); setTimeout(()=>beep(784,0.08,'sine',0.06),90); setTimeout(()=>beep(988,0.10,'sine',0.07),180); },
+      lose(){ beep(196,0.10,'sawtooth',0.05); setTimeout(()=>beep(165,0.12,'sawtooth',0.05),120); },
+      draw(){ beep(330,0.08,'sine',0.05); setTimeout(()=>beep(330,0.08,'sine',0.05),120); },
+      milestone(){ beep(1046,0.10,'sine',0.08); setTimeout(()=>beep(1318,0.10,'sine',0.08),120); setTimeout(()=>beep(1568,0.12,'sine',0.09),240); }
+    };
+
+    // ===== UI elements =====
+    const statusEl = document.getElementById('status');
+    const winsEl = document.getElementById('wins');
+    const skillEl = document.getElementById('skill');
+    const skillValEl = document.getElementById('skillVal');
+    const thinkTimeEl = document.getElementById('thinkTime');
+    const humanColorEl = document.getElementById('humanColor');
+    const soundBtn = document.getElementById('soundBtn');
+
+    skillEl.addEventListener('input', () => skillValEl.textContent = skillEl.value);
+
+    function setStatus(t) { statusEl.textContent = t; }
+
+    // ===== Chess + board =====
+    const game = new Chess();
+    let board = null;
+    let engine = null;
+    let engineReady = false;
+    let isThinking = false;
+    let wins = 0;
+
+    // Send a command to Stockfish (supports multiple API shapes)
+    function sfSend(cmd) {
+      try {
+        if (!engine) return;
+        // Worker-style
+        if (engine instanceof Worker) {
+          engine.postMessage(cmd);
+          return;
+        }
+        // Legacy engine-style
+        if (typeof engine.postMessage === 'function') {
+          try { return engine.postMessage(cmd, true); } catch (e) { return engine.postMessage(cmd); }
+        }
+        if (typeof engine.postCustomMessage === 'function') return engine.postCustomMessage(cmd);
+      } catch (e) {}
+    }
+
+    function pieceTheme(piece) {
+      // Use remote piece images (simple + reliable). If your network blocks this,
+      // we can download and serve locally too.
+      return 'https://chessboardjs.com/img/chesspieces/wikipedia/' + piece + '.png';
+    }
+
+    const TAP_MODE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+    function initBoard() {
+      board = Chessboard('board', {
+        draggable: !TAP_MODE,
+        position: 'start',
+        pieceTheme,
+        onDragStart,
+        onDrop,
+        onSnapEnd
+      });
+
+      // Keep board sized correctly when rotating / resizing on mobile/tablet
+      const doResize = () => {
+        try { board && board.resize && board.resize(); } catch (e) {}
+      };
+      window.addEventListener('resize', doResize);
+      window.addEventListener('orientationchange', () => setTimeout(doResize, 150));
+
+      // Tap-to-move support (mobile/tablet)
+      if (TAP_MODE) enableTapToMove();
+    }
+
+    function syncOrientation() {
+      const human = humanColorEl.value;
+      board.orientation(human === 'w' ? 'white' : 'black');
+    }
+
+    function onDragStart (source, piece) {
+      if (isThinking) return false;
+      if (game.game_over()) return false;
+
+      const human = humanColorEl.value;
+      if (game.turn() !== human) return false;
+
+      // only pick up pieces for side to move
+      if (human === 'w' && piece.search(/^b/) !== -1) return false;
+      if (human === 'b' && piece.search(/^w/) !== -1) return false;
+
+      return true;
+    }
+
+    function afterHumanMove(move) {
+      if (!move) return;
+      if (move.captured) SFX.capture(); else SFX.move();
+      if (game.in_check()) SFX.check();
+      board.position(game.fen());
+      window.setTimeout(maybeAIMove, 80);
+    }
+
+    function onDrop (source, target) {
+      const move = game.move({ from: source, to: target, promotion: 'q' });
+      if (move === null) return 'snapback';
+      afterHumanMove(move);
+    }
+
+    function onSnapEnd () {
+      board.position(game.fen());
+    }
+
+    // ===== Tap-to-move (touch devices) =====
+    let tapSelected = null;
+
+    function clearTapHighlights() {
+      try {
+        document.querySelectorAll('#board .sq-hl, #board .sq-hint').forEach(el => {
+          el.classList.remove('sq-hl');
+          el.classList.remove('sq-hint');
+        });
+      } catch (e) {}
+    }
+
+    function squareEl(square) {
+      // chessboard.js squares usually have data-square="e4"
+      return document.querySelector(`#board [data-square="${square}"]`);
+    }
+
+    function highlightFrom(square) {
+      clearTapHighlights();
+      const fromEl = squareEl(square);
+      if (fromEl) fromEl.classList.add('sq-hl');
+
+      // show legal destinations (hints)
+      const moves = game.moves({ square, verbose: true });
+      moves.forEach(m => {
+        const toEl = squareEl(m.to);
+        if (toEl) toEl.classList.add('sq-hint');
+      });
+    }
+
+    function enableTapToMove() {
+      const boardRoot = document.getElementById('board');
+      if (!boardRoot) return;
+
+      boardRoot.addEventListener('pointerdown', (ev) => {
+        const sq = ev.target && ev.target.closest && ev.target.closest('[data-square]');
+        if (!sq) return;
+
+        // Prevent extra browser behaviors (selection/scroll)
+        ev.preventDefault();
+
+        if (isThinking) return;
+        if (game.game_over()) return;
+        if (!isHumansTurn()) return;
+
+        const square = sq.getAttribute('data-square');
+        const human = humanColorEl.value;
+        const piece = game.get(square); // { type:'p', color:'w' } or null
+
+        // No selection yet: must tap your own piece
+        if (!tapSelected) {
+          if (!piece) return;
+          if (piece.color !== human) return;
+          tapSelected = square;
+          highlightFrom(tapSelected);
+          return;
+        }
+
+        // Tapping same square -> deselect
+        if (tapSelected === square) {
+          tapSelected = null;
+          clearTapHighlights();
+          return;
+        }
+
+        // Try to move
+        const move = game.move({ from: tapSelected, to: square, promotion: 'q' });
+        if (move) {
+          tapSelected = null;
+          clearTapHighlights();
+          afterHumanMove(move);
+          return;
+        }
+
+        // If move invalid but user tapped another own piece, switch selection
+        if (piece && piece.color === human) {
+          tapSelected = square;
+          highlightFrom(tapSelected);
+          return;
+        }
+
+        // Otherwise keep selection (user likely mis-tapped)
+      }, { passive: false });
+
+      // Clear selection if user starts a new game / changes side
+      const clear = () => { tapSelected = null; clearTapHighlights(); };
+      document.getElementById('newGameBtn').addEventListener('click', clear);
+      document.getElementById('undoBtn').addEventListener('click', clear);
+      humanColorEl.addEventListener('change', clear);
+    }
+
+    function gameResultText() {
+      if (game.in_checkmate()) return 'Chiếu hết (checkmate).';
+      if (game.in_draw()) return 'Hòa (draw).';
+      if (game.in_stalemate()) return 'Hết nước đi (stalemate).';
+      if (game.in_threefold_repetition()) return 'Lặp lại 3 lần.';
+      if (game.insufficient_material()) return 'Không đủ quân để chiếu hết.';
+      return 'Kết thúc.';
+    }
+
+    async function say(text) {
+      try {
+        if (!('speechSynthesis' in window)) return;
+
+        // Ensure voices are loaded (Chrome often loads asynchronously)
+        const synth = window.speechSynthesis;
+        let voices = synth.getVoices();
+        if (!voices || voices.length === 0) {
+          await new Promise((resolve) => {
+            const t = setTimeout(resolve, 500);
+            synth.addEventListener('voiceschanged', () => {
+              clearTimeout(t);
+              resolve();
+            }, { once: true });
+          });
+          voices = synth.getVoices();
+        }
+
+        // Pick a Vietnamese voice if available
+        const viVoices = (voices || []).filter(v => (v.lang || '').toLowerCase().startsWith('vi'));
+        const preferred = viVoices.find(v => /vietnam/i.test(v.name || '')) || viVoices[0];
+
+        // Cancel any previous utterance to avoid overlap
+        synth.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'vi-VN';
+        if (preferred) u.voice = preferred;
+        u.rate = 1.02;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+        synth.speak(u);
+      } catch (e) {}
+    }
+
+    function handleGameOver() {
+      const human = humanColorEl.value;
+
+      if (game.in_checkmate()) {
+        const loser = game.turn();
+        const winner = (loser === 'w') ? 'b' : 'w';
+        if (winner === human) {
+          wins++;
+          winsEl.textContent = wins;
+          SFX.win();
+          const msg = 'Xin chúc mừng anh bạn đã thắng!';
+          say(msg);
+          setStatus('Hai anh thắng ván này! ' + gameResultText() + ' ' + msg);
+          if (wins >= 10) {
+            SFX.milestone();
+            const msg2 = 'Chúc mừng! Hai anh đã thắng 10 ván!';
+            say(msg2);
+            setStatus('CHÚC MỪNG! Hai anh đã thắng 10 ván! Ông bà chủ thưởng đi chơi vườn thú Thủ Lệ!');
+          }
+        } else {
+          SFX.lose();
+          const msg = 'Anh bạn đã thua, xin chia buồn.';
+          say(msg);
+          setStatus('AI thắng ván này. ' + gameResultText() + ' ' + msg);
+        }
+        return;
+      }
+
+      if (game.in_draw()) {
+        SFX.draw();
+        const msg = 'Ván này hòa.';
+        say(msg);
+        setStatus('Ván này hòa. ' + gameResultText());
+        return;
+      }
+
+      setStatus('Ván đấu kết thúc. ' + gameResultText());
+    }
+
+    // ===== Stockfish engine (local) =====
+    let pendingAIMove = false;
+
+    function initEngine() {
+      setStatus('Đang tải AI…');
+
+      // Use Stockfish.js in WEB WORKER mode (stable output; avoids hanging queues)
+      // This file supports worker mode via URL hash: #<wasm>,worker
+      try {
+        // If the hash-based worker URL is flaky in some browsers, use plain script URL.
+        // stockfish.js will load stockfish-nnue-16-single.wasm via locateFile/relative path.
+        const workerUrl = './vendor2/stockfish.js';
+        engine = new Worker(workerUrl);
+        window.__sfEngine = engine;
+        window._sfEngine = engine;
+        setStatus('Đang tải AI (Worker)…');
+      } catch (e) {
+        console.error(e);
+        setStatus('Không tạo được Worker cho AI. Thử mở trang bằng localhost và Ctrl+F5.');
+        return;
+      }
+
+      const onEngineLine = (lineRaw) => {
+        const line = String(lineRaw || '').trim();
+        if (line) {
+          const tail = line.length > 140 ? line.slice(0,140) + '…' : line;
+          if (!engineReady || isThinking) setStatus('AI: ' + tail);
+        }
+
+        if (line === 'uciok' || line.endsWith(' uciok')) {
+          sfSend('ucinewgame');
+          sfSend('setoption name Skill Level value ' + Number(skillEl.value));
+          sfSend('isready');
+          return;
+        }
+        if (line === 'readyok' || line.endsWith(' readyok')) {
+          engineReady = true;
+          setStatus('AI sẵn sàng.');
+          if (pendingAIMove) {
+            pendingAIMove = false;
+            setTimeout(maybeAIMove, 30);
+          }
+          return;
+        }
+        if (line.startsWith('bestmove')) {
+          const best = line.split(/\s+/)[1];
+          if (best && best !== '(none)') {
+            const from = best.slice(0,2);
+            const to = best.slice(2,4);
+            const promo = best.length > 4 ? best.slice(4,5) : undefined;
+            const mv = game.move({ from, to, promotion: promo || 'q' });
+            if (mv) {
+              if (mv.captured) SFX.capture(); else SFX.move();
+              if (game.in_check()) SFX.check();
+            }
+            board.position(game.fen());
+          }
+          isThinking = false;
+          if (game.game_over()) handleGameOver();
+          else setStatus('Tới lượt hai anh (người chơi).');
+          return;
+        }
+      };
+
+      engine.onmessage = (e) => onEngineLine(e.data);
+      engine.onerror = (e) => {
+        console.error(e);
+        setStatus('Lỗi AI Worker. Ctrl+F5 rồi thử lại.');
+      };
+
+      // Kick-start UCI handshake
+      sfSend('uci');
+      setTimeout(() => sfSend('uci'), 300);
+      setTimeout(() => sfSend('isready'), 700);
+
+      // Watchdog
+      setTimeout(() => {
+        if (!engineReady) {
+          setStatus('AI chưa phản hồi. Ông chủ Ctrl+F5.');
+        }
+      }, 6000);
+    }
+
+    function isHumansTurn() {
+      return game.turn() === humanColorEl.value;
+    }
+
+    function maybeAIMove() {
+      if (isThinking) return;
+      if (game.game_over()) { handleGameOver(); return; }
+      if (isHumansTurn()) { setStatus('Tới lượt hai anh (người chơi).'); return; }
+
+      if (!engine) {
+        pendingAIMove = true;
+        setStatus('AI đang khởi động… (đang tải engine)');
+        return;
+      }
+
+      // Some Stockfish.js builds don't reliably emit readyok in the browser.
+      // If engine module is loaded, we allow searching even if readyok wasn't observed.
+      if (!engineReady) {
+        pendingAIMove = true;
+        setStatus('AI đang khởi động… (chờ 1 chút)');
+        // Try anyway after a short delay
+        setTimeout(() => { if (!engineReady) { engineReady = true; maybeAIMove(); } }, 600);
+        try { sfSend('isready'); } catch {}
+        return;
+      }
+
+      isThinking = true;
+      const ms = Math.max(50, Number(thinkTimeEl.value) || 600);
+      setStatus(`AI đang suy nghĩ… (${ms} ms)`);
+      sfSend('position fen ' + game.fen());
+      sfSend('go movetime ' + ms);
+
+      // Watchdog: if engine doesn't answer, try to stop + retry
+      setTimeout(() => {
+        if (!isThinking) return;
+        setStatus('AI bị kẹt… đang thử lại');
+        try { sfSend('stop'); } catch {}
+        isThinking = false;
+        setTimeout(maybeAIMove, 80);
+      }, ms + 2500);
+    }
+
+    // ===== Controls =====
+    document.getElementById('newGameBtn').addEventListener('click', () => {
+      if (isThinking) return;
+      game.reset();
+      board.start();
+      syncOrientation();
+      SFX.start();
+      setStatus('Ván mới. Tới lượt hai anh (người chơi).');
+      maybeAIMove();
+    });
+
+    document.getElementById('flipBtn').addEventListener('click', () => {
+      const o = board.orientation();
+      board.orientation(o === 'white' ? 'black' : 'white');
+    });
+
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      if (isThinking) return;
+      game.undo();
+      game.undo();
+      board.position(game.fen());
+      setStatus('Đã undo. Tới lượt hai anh (người chơi).');
+    });
+
+    soundBtn.addEventListener('click', () => {
+      soundOn = !soundOn;
+      soundBtn.textContent = 'Âm thanh: ' + (soundOn ? 'BẬT' : 'TẮT');
+      if (soundOn) SFX.start();
+    });
+
+    skillEl.addEventListener('change', () => {
+      if (!engine) return;
+      sfSend('setoption name Skill Level value ' + Number(skillEl.value));
+      sfSend('isready');
+    });
+
+    humanColorEl.addEventListener('change', () => {
+      syncOrientation();
+      setTimeout(() => { if (!game.game_over()) maybeAIMove(); }, 80);
+    });
+
+    // ===== Greeting gate =====
+    function greetAndStart() {
+      // Use prerecorded Vietnamese audio (local file)
+      const greetAudio = new Audio('./audio.mp3');
+      greetAudio.preload = 'auto';
+      greetAudio.volume = 1.0;
+
+      // Browsers require a user gesture before audio can play.
+      // Show a minimal Start button overlay (no greeting text).
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.background = 'rgba(0,0,0,.65)';
+      overlay.style.display = 'grid';
+      overlay.style.placeItems = 'center';
+      overlay.style.zIndex = '9999';
+
+      const btn = document.createElement('button');
+      btn.textContent = 'Bắt đầu';
+      btn.style.border = '0';
+      btn.style.borderRadius = '999px';
+      btn.style.padding = '12px 18px';
+      btn.style.fontWeight = '900';
+      btn.style.cursor = 'pointer';
+      btn.style.background = 'linear-gradient(135deg,#1f4aa8,#2f7bdc)';
+      btn.style.color = 'white';
+
+      overlay.appendChild(btn);
+      document.body.appendChild(overlay);
+
+      // Keep status minimal (no greeting text)
+      setStatus('');
+
+      const startGame = () => {
+        try { ensureAudio(); } catch {}
+        SFX.start();
+        overlay.remove();
+        setStatus('Tới lượt hai anh (người chơi).');
+        maybeAIMove();
+      };
+
+      btn.addEventListener('click', async () => {
+        try {
+          // attempt to play greeting audio; start game after it finishes
+          await greetAudio.play();
+          greetAudio.onended = startGame;
+          // safety: if onended doesn't fire for some reason
+          setTimeout(startGame, 12000);
+        } catch (e) {
+          // If playback fails, just start the game.
+          startGame();
+        }
+      }, { once: true });
+    }
+
+    // ===== boot =====
+    initBoard();
+    syncOrientation();
+    initEngine();
+    setTimeout(greetAndStart, 400);
+  </script>
+</body>
+</html>
